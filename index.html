@@ -170,7 +170,7 @@
       </div>
       <div class="navbar-actions">
         <button id="btn-logout-nav" class="btn-nav btn-nav-logout" onclick="irAlInicio()">Salir ✕</button>
-        <button class="btn-nav btn-nav-admin" onclick="mostrarSeccion('admin-panel');switchAdminTab('estadisticas');cargarEstadisticas();">⚙ Admin</button>
+        <button class="btn-nav btn-nav-admin" onclick="pedirClaveAdmin()">⚙ Admin</button>
       </div>
     </div>
   </div>
@@ -451,7 +451,6 @@ async function cargarNavRecords() {
       ['nav-record-1','nav-record-2','nav-record-3'].forEach((id, i) => {
         if (!res.data[i]) return;
         document.getElementById(id).style.display = 'flex';
-        document.getElementById(id.replace('record','r')+(i+1)+'-name'.replace(/.*-/,'')).innerText; // skip — use direct IDs
         document.getElementById('nav-r'+(i+1)+'-name').innerText = res.data[i].nombre.split(' ')[0];
         document.getElementById('nav-r'+(i+1)+'-score').innerText = res.data[i].total.toFixed(1)+' pts';
       });
@@ -664,7 +663,7 @@ function renderPregunta() {
   p.opcionesShuffled.forEach((item, idx) => {
     const dl = ['A','B','C','D'][idx];
     const sel = respuestasGlobales[indiceActual]?.letraOriginal === item.letra ? 'seleccionada' : '';
-    html += `<button class="btn btn-opcion w-100 ${sel}" onclick="seleccionarOpcion('${item.letra}','${dl}')"><b>${dl}.</b> ${item.texto}</button>`;
+    html += `<button class="btn btn-opcion w-100 ${sel}" data-letra="${item.letra}" onclick="seleccionarOpcion('${item.letra}','${dl}')"><b>${dl}.</b> ${item.texto}</button>`;
   });
   document.getElementById('opciones-container').innerHTML = html;
   if (window.MathJax) MathJax.typesetPromise([document.getElementById('examen-section')]);
@@ -676,7 +675,11 @@ function renderPregunta() {
 
 function seleccionarOpcion(letraOriginal, letraDisplay) {
   respuestasGlobales[indiceActual] = { idPregunta: examenGlobal[indiceActual].id, seleccion: letraOriginal, letraOriginal, correctaReal: examenGlobal[indiceActual].correcta };
-  renderPregunta();
+  // Actualizar solo la selección visual sin tocar el temporizador
+  document.querySelectorAll('#opciones-container .btn-opcion').forEach(btn => {
+    btn.classList.toggle('seleccionada', btn.getAttribute('data-letra') === letraOriginal);
+  });
+  actualizarQGrid();
 }
 
 function avanzarPregunta(forzado=false) {
@@ -1040,7 +1043,48 @@ function editarPregunta(p){ document.getElementById('titulo-form-pregunta').inne
 function cancelarEdicion(){ document.getElementById('titulo-form-pregunta').innerText='Nueva Pregunta'; document.getElementById('adm-id').value=''; ['adm-tema','adm-enunciado','adm-img','adm-opa','adm-opb','adm-opc','adm-opd'].forEach(id=>document.getElementById(id).value=''); document.getElementById('btn-guardar-preg').innerText='Guardar en Banco'; document.getElementById('btn-cancelar-edicion').classList.add('d-none'); }
 async function borrarPregunta(id){ const c=await Swal.fire({title:'¿Eliminar pregunta?',icon:'warning',showCancelButton:true,confirmButtonText:'Sí, eliminar',confirmButtonColor:'#ef4444'}); if(c.isConfirmed){toggleLoader(true);await apiCall({action:'eliminarPregunta',id});toggleLoader(false);cargarListaPreguntas();} }
 async function registrarEstudiante(){ toggleLoader(true); await apiCall({action:'registrarEstudianteAdmin',zip:document.getElementById('reg-zip').value,nombre:document.getElementById('reg-nombre').value,grado:document.getElementById('reg-grado').value}); toggleLoader(false); Swal.fire('✅ Registrado','Participante matriculado.','success'); }
-function irAlInicio(){ currentUser=null; examenActivo=false; clearInterval(timerPregunta); clearInterval(timerGlobal); document.getElementById('in-zip').value=''; document.getElementById('btn-logout-nav').style.display='none'; mostrarSeccion('login-section'); }
+// ── ACCESO ADMIN (contraseña verificada por hash, nunca en texto plano) ──
+// Hash SHA-256 de la contraseña "quimica2025" — cámbialo generando: crypto.subtle + console
+const ADMIN_HASH = '2ec7950eaba3ce9ae7dc6c95757d353884a34b60704a25ef9eb216b689419dcf';
+
+async function pedirClaveAdmin() {
+  const { value: pwd } = await Swal.fire({
+    title: '🔐 Acceso Administrador',
+    input: 'password',
+    inputLabel: 'Contraseña',
+    inputPlaceholder: 'Ingresa la contraseña',
+    inputAttributes: { autocomplete: 'current-password' },
+    confirmButtonText: 'Entrar',
+    cancelButtonText: 'Cancelar',
+    showCancelButton: true,
+    confirmButtonColor: '#0d1b2a',
+    inputValidator: v => !v ? 'Ingresa la contraseña' : null
+  });
+  if (!pwd) return;
+  const hash = await sha256(pwd);
+  if (hash === ADMIN_HASH) {
+    mostrarSeccion('admin-panel');
+    switchAdminTab('estadisticas');
+    cargarEstadisticas();
+  } else {
+    Swal.fire({ icon: 'error', title: 'Acceso denegado', text: 'Contraseña incorrecta.', confirmButtonColor: '#ef4444' });
+  }
+}
+
+async function sha256(msg) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(msg));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+function irAlInicio() {
+  currentUser = null;
+  examenActivo = false;
+  clearInterval(timerPregunta);
+  clearInterval(timerGlobal);
+  document.getElementById('in-zip').value = '';
+  document.getElementById('btn-logout-nav').style.display = 'none';
+  mostrarSeccion('login-section');
+}
 </script>
 </body>
 </html>
